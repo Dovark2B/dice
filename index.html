@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dé 3D (faces en images) — overlay</title>
+  <style>
+    :root {
+      --size: 160px;              /* Taille du dé */
+      --edge: #d9d9d9;            /* Bord des faces */
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial;
+      background: transparent; /* overlay compatible */
+      display: grid;
+      place-items: center;
+    }
+
+    /* Conteneur d'apparition/disparition */
+    #root {
+      opacity: 0;
+      transform: scale(0.98);
+      transition: opacity .35s ease, transform .35s ease;
+      will-change: opacity, transform;
+      display: grid;
+      justify-items: center;
+    }
+    #root.show { opacity: 1; transform: scale(1); }
+    #root.hide { opacity: 0; transform: scale(0.98); }
+
+    /* Zone 3D */
+    .scene {
+      width: var(--size);
+      height: var(--size);
+      perspective: 900px;
+      perspective-origin: 50% 40%;
+      position: relative;
+    }
+
+    /* Le cube */
+    .cube {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      transform-style: preserve-3d;
+      will-change: transform;
+      transition: transform 1.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+
+    /* Face du dé en image */
+    .face {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 18px;
+      overflow: hidden; /* masque l'image dans les bords arrondis */
+      border: 1px solid var(--edge);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+      display: grid;
+      place-items: center;
+      background: #f3f4f6; /* bg de secours si l'image ne charge pas */
+    }
+    .face img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;           /* couvre toute la face */
+      image-rendering: auto;       /* qualité */
+      pointer-events: none;        /* pas cliquable dans l'overlay */
+      user-select: none;
+      display: block;
+    }
+
+    /* Positionnement des faces autour du cube */
+    .front  { transform: translateZ(calc(var(--size) / 2)); }
+    .back   { transform: rotateY(180deg) translateZ(calc(var(--size) / 2)); }
+    .right  { transform: rotateY( 90deg) translateZ(calc(var(--size) / 2)); }
+    .left   { transform: rotateY(-90deg) translateZ(calc(var(--size) / 2)); }
+    .top    { transform: rotateX( 90deg) translateZ(calc(var(--size) / 2)); }
+    .bottom { transform: rotateX(-90deg) translateZ(calc(var(--size) / 2)); }
+
+    /* Effet pendant le roll (optionnel visuel) */
+    .rolling { filter: brightness(1.02); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .cube { transition-duration: 0.01ms; }
+      #root { transition-duration: 0.01ms; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root" aria-live="polite">
+    <div class="scene">
+      <div class="cube" id="cube" aria-label="Dé 3D"></div>
+    </div>
+  </div>
+
+  <script>
+    // --- Faces en images ---
+    const cubeEl = document.getElementById('cube');
+    const rootEl = document.getElementById('root');
+
+    // Placeholders: remplace par tes URLs/chemins (PNG/JPG/WebP, transparents ou non)
+    const defaultImages = {
+      1: 'face1.png',
+      2: 'face2.png',
+      3: 'face3.png',
+      4: 'face4.png',
+      5: 'face5.png',
+      6: 'face6.png'
+    };
+
+    // construction d'une face image
+    function makeImageFace(className, faceIndex, src) {
+      const face = document.createElement('div');
+      face.className = `face ${className}`;
+      const img = document.createElement('img');
+      img.alt = `Face ${faceIndex}`;
+      img.decoding = 'async';
+      img.loading = 'eager'; // on veut éviter le flash lors du roll
+      img.src = src;
+      face.appendChild(img);
+      return face;
+    }
+
+    // front=1, back=6, right=3, left=4, top=5, bottom=2
+    const faceOrder = [
+      ['front', 1],
+      ['back', 6],
+      ['right', 3],
+      ['left', 4],
+      ['top', 5],
+      ['bottom', 2]
+    ];
+
+    // création initiale
+    faceOrder.forEach(([cls, idx]) => cubeEl.appendChild(makeImageFace(cls, idx, defaultImages[idx])));
+
+    // permet de mettre à jour dynamiquement les images (ex: via Streamer.bot)
+    window.setDieImages = function(map) {
+      // map: {1: 'url1', 2: 'url2', ...}
+      const faces = cubeEl.querySelectorAll('.face');
+      faces.forEach(face => {
+        const isFront = face.classList.contains('front');
+        const isBack = face.classList.contains('back');
+        const isRight = face.classList.contains('right');
+        const isLeft = face.classList.contains('left');
+        const isTop = face.classList.contains('top');
+        const isBottom = face.classList.contains('bottom');
+        let idx = 1;
+        if (isBack) idx = 6; else if (isRight) idx = 3; else if (isLeft) idx = 4; else if (isTop) idx = 5; else if (isBottom) idx = 2; else idx = 1;
+        const url = map[idx];
+        if (url) face.querySelector('img').src = url;
+      });
+    }
+
+    // Mapping rotation pour amener une face en avant (visible)
+    const FACE_TO_ANGLES = {
+      1: { x:   0, y:   0 },   // front
+      2: { x:  90, y:   0 },   // bottom -> front
+      3: { x:   0, y: -90 },   // right  -> front
+      4: { x:   0, y:  90 },   // left   -> front
+      5: { x: -90, y:   0 },   // top    -> front
+      6: { x:   0, y: 180 }    // back   -> front
+    };
+
+    let isRolling = false;
+    let hideTimeout = null;
+    let lastTransform = { x: 0, y: 0, z: 0 };
+
+    function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+    function currentCSSTransformToAngles() {
+      const m = cubeEl.style.transform.match(/rotateX\(([-\d.]+)deg\)\s*rotateY\(([-\d.]+)deg\)\s*rotateZ\(([-\d.]+)deg\)/);
+      if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]), z: parseFloat(m[3]) };
+      return { ...lastTransform };
+    }
+
+    function setTransform(x, y, z, durationMs = null, timing = null) {
+      if (durationMs != null) cubeEl.style.transitionDuration = `${durationMs}ms`;
+      if (timing != null) cubeEl.style.transitionTimingFunction = timing;
+      const t = `rotateX(${x}deg) rotateY(${y}deg) rotateZ(${z}deg)`;
+      cubeEl.style.transform = t;
+      lastTransform = { x, y, z };
+    }
+
+    function fadeIn() {
+      rootEl.classList.remove('hide');
+      void rootEl.offsetWidth; // reflow
+      rootEl.classList.add('show');
+    }
+    function fadeOut() {
+      rootEl.classList.remove('show');
+      rootEl.classList.add('hide');
+    }
+
+    function rollDie() {
+      if (isRolling) return;
+      isRolling = true;
+      cubeEl.classList.add('rolling');
+      clearTimeout(hideTimeout);
+
+      // Affiche le conteneur
+      fadeIn();
+
+      // PHASE 1 — pré-spin très rapide (linear)
+      const preSpins = {
+        x: randInt(3, 6) * 360,
+        y: randInt(3, 6) * 360,
+        z: randInt(1, 4) * 360,
+        dur: 250
+      };
+      const c1 = currentCSSTransformToAngles();
+      setTransform(c1.x + preSpins.x, c1.y + preSpins.y, c1.z + preSpins.z, preSpins.dur, 'linear');
+
+      const onPreEnd = (ev) => {
+        if (ev.propertyName !== 'transform') return;
+        cubeEl.removeEventListener('transitionend', onPreEnd);
+
+        // PHASE 2 — spin vers la face cible avec easing (ralentissement)
+        const face = randInt(1, 6);
+        const target = FACE_TO_ANGLES[face];
+        const xSpins = randInt(2, 5) * 360;
+        const ySpins = randInt(2, 6) * 360;
+        const zSpins = randInt(0, 4) * 360;
+        const duration = randInt(900, 1500);
+
+        cubeEl.style.transitionTimingFunction = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
+        const { x: cx, y: cy, z: cz } = currentCSSTransformToAngles();
+        const nx = cx + xSpins + target.x;
+        const ny = cy + ySpins + target.y;
+        const nz = cz + zSpins;
+        setTransform(nx, ny, nz, duration);
+
+        const onFinalEnd = (ev2) => {
+          if (ev2.propertyName !== 'transform') return;
+          cubeEl.removeEventListener('transitionend', onFinalEnd);
+          isRolling = false;
+          cubeEl.classList.remove('rolling');
+          cubeEl.dispatchEvent(new CustomEvent('roll-end', { detail: { face, angles: { x: nx, y: ny, z: nz } } }));
+
+          // Reste affiché 5s puis fade out
+          hideTimeout = setTimeout(() => { fadeOut(); }, 5000);
+        };
+        cubeEl.addEventListener('transitionend', onFinalEnd);
+      };
+      cubeEl.addEventListener('transitionend', onPreEnd);
+    }
+
+    // Expose pour déclenchement externe (Streamer.bot)
+    window.rollDie = rollDie;
+    window.rollTo = function(face) {
+      if (!FACE_TO_ANGLES[face] || isRolling) return;
+      fadeIn();
+      const target = FACE_TO_ANGLES[face];
+      const { x: cx, y: cy, z: cz } = currentCSSTransformToAngles();
+      const nx = cx + target.x;
+      const ny = cy + target.y;
+      const nz = cz;
+      setTransform(nx, ny, nz, 600, 'cubic-bezier(0.2, 0.7, 0.2, 1)');
+      clearTimeout(hideTimeout);
+      hideTimeout = setTimeout(() => fadeOut(), 5000);
+    };
+
+    // Auto-run à chaque refresh
+    function init() {
+      setTransform(0, 0, 0, 1);
+      requestAnimationFrame(() => { rollDie(); });
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>
