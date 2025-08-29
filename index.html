@@ -3,18 +3,24 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Dé 3D (faces en images) — overlay</title>
+  <title>Dé 3D qui tourne (HTML/CSS/JS)</title>
   <style>
     :root {
-      --size: 160px;              /* Taille du dé */
+      --size: 140px;              /* Taille du dé */
+      --face: #ffffff;            /* Couleur des faces */
       --edge: #d9d9d9;            /* Bord des faces */
+      --pip: #111111;             /* Couleur des points */
+      --bg-1: #0f172a;            /* Décor (si besoin) */
+      --bg-2: #1f2937;            /* Décor (si besoin) */
+      --accent: #60a5fa;
     }
 
     * { box-sizing: border-box; }
     html, body { height: 100%; }
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: #e5e7eb;
       background: transparent; /* overlay compatible */
       display: grid;
       place-items: center;
@@ -27,6 +33,7 @@
       transition: opacity .35s ease, transform .35s ease;
       will-change: opacity, transform;
       display: grid;
+      gap: 16px;
       justify-items: center;
     }
     #root.show { opacity: 1; transform: scale(1); }
@@ -41,6 +48,7 @@
       position: relative;
     }
 
+
     /* Le cube */
     .cube {
       width: 100%;
@@ -51,28 +59,29 @@
       transition: transform 1.2s cubic-bezier(0.2, 0.7, 0.2, 1);
     }
 
-    /* Face du dé en image */
+    /* Face du dé */
     .face {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
-      border-radius: 18px;
-      overflow: hidden; /* masque l'image dans les bords arrondis */
-      border: 1px solid var(--edge);
-      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
       display: grid;
-      place-items: center;
-      background: #f3f4f6; /* bg de secours si l'image ne charge pas */
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      align-items: center;
+      justify-items: center;
+      background: radial-gradient(120% 100% at 30% 25%, #fff, #f2f2f2 60%, #ececec 100%);
+      background-color: var(--face);
+      border: 1px solid var(--edge);
+      border-radius: 14px;
     }
-    .face img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;           /* couvre toute la face */
-      image-rendering: auto;       /* qualité */
-      pointer-events: none;        /* pas cliquable dans l'overlay */
-      user-select: none;
-      display: block;
+
+    .pip {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: radial-gradient(12px 12px at 35% 35%, #333, var(--pip));
+      box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset, 0 2px 4px rgba(0,0,0,0.35);
     }
 
     /* Positionnement des faces autour du cube */
@@ -83,8 +92,16 @@
     .top    { transform: rotateX( 90deg) translateZ(calc(var(--size) / 2)); }
     .bottom { transform: rotateX(-90deg) translateZ(calc(var(--size) / 2)); }
 
-    /* Effet pendant le roll (optionnel visuel) */
-    .rolling { filter: brightness(1.02); }
+    /* Pips position helpers (grid area) */
+    .r1 { grid-row: 1; }
+    .r2 { grid-row: 2; }
+    .r3 { grid-row: 3; }
+    .c1 { grid-column: 1; }
+    .c2 { grid-column: 2; }
+    .c3 { grid-column: 3; }
+
+    /* Effet pendant le roll */
+    .rolling + .shadow { transform: scale(0.85) translateY(2px); }
 
     @media (prefers-reduced-motion: reduce) {
       .cube { transition-duration: 0.01ms; }
@@ -96,76 +113,52 @@
   <div id="root" aria-live="polite">
     <div class="scene">
       <div class="cube" id="cube" aria-label="Dé 3D"></div>
+      <div class="shadow"></div>
     </div>
   </div>
 
   <script>
-    // --- Faces en images ---
+    // --- Construction des faces avec les pips (3x3) ---
     const cubeEl = document.getElementById('cube');
     const rootEl = document.getElementById('root');
 
-    // Placeholders: remplace par tes URLs/chemins (PNG/JPG/WebP, transparents ou non)
-    const defaultImages = {
-      1: 'face1.png',
-      2: 'face2.png',
-      3: 'face3.png',
-      4: 'face4.png',
-      5: 'face5.png',
-      6: 'face6.png'
-    };
-
-    // construction d'une face image
-    function makeImageFace(className, faceIndex, src) {
+    function makeFace(className, pipPositions) {
       const face = document.createElement('div');
       face.className = `face ${className}`;
-      const img = document.createElement('img');
-      img.alt = `Face ${faceIndex}`;
-      img.decoding = 'async';
-      img.loading = 'eager'; // on veut éviter le flash lors du roll
-      img.src = src;
-      face.appendChild(img);
+      pipPositions.forEach(([r, c]) => {
+        const pip = document.createElement('div');
+        pip.className = `pip r${r} c${c}`;
+        face.appendChild(pip);
+      });
       return face;
     }
 
+    const PIPS = {
+      1: [[2,2]],
+      2: [[1,1],[3,3]],
+      3: [[1,1],[2,2],[3,3]],
+      4: [[1,1],[1,3],[3,1],[3,3]],
+      5: [[1,1],[1,3],[2,2],[3,1],[3,3]],
+      6: [[1,1],[1,3],[2,1],[2,3],[3,1],[3,3]]
+    };
+
     // front=1, back=6, right=3, left=4, top=5, bottom=2
-    const faceOrder = [
-      ['front', 1],
-      ['back', 6],
-      ['right', 3],
-      ['left', 4],
-      ['top', 5],
-      ['bottom', 2]
-    ];
+    cubeEl.append(
+      makeFace('front',  PIPS[1]),
+      makeFace('back',   PIPS[6]),
+      makeFace('right',  PIPS[3]),
+      makeFace('left',   PIPS[4]),
+      makeFace('top',    PIPS[5]),
+      makeFace('bottom', PIPS[2])
+    );
 
-    // création initiale
-    faceOrder.forEach(([cls, idx]) => cubeEl.appendChild(makeImageFace(cls, idx, defaultImages[idx])));
-
-    // permet de mettre à jour dynamiquement les images (ex: via Streamer.bot)
-    window.setDieImages = function(map) {
-      // map: {1: 'url1', 2: 'url2', ...}
-      const faces = cubeEl.querySelectorAll('.face');
-      faces.forEach(face => {
-        const isFront = face.classList.contains('front');
-        const isBack = face.classList.contains('back');
-        const isRight = face.classList.contains('right');
-        const isLeft = face.classList.contains('left');
-        const isTop = face.classList.contains('top');
-        const isBottom = face.classList.contains('bottom');
-        let idx = 1;
-        if (isBack) idx = 6; else if (isRight) idx = 3; else if (isLeft) idx = 4; else if (isTop) idx = 5; else if (isBottom) idx = 2; else idx = 1;
-        const url = map[idx];
-        if (url) face.querySelector('img').src = url;
-      });
-    }
-
-    // Mapping rotation pour amener une face en avant (visible)
     const FACE_TO_ANGLES = {
-      1: { x:   0, y:   0 },   // front
-      2: { x:  90, y:   0 },   // bottom -> front
-      3: { x:   0, y: -90 },   // right  -> front
-      4: { x:   0, y:  90 },   // left   -> front
-      5: { x: -90, y:   0 },   // top    -> front
-      6: { x:   0, y: 180 }    // back   -> front
+      1: { x:   0, y:   0 },
+      2: { x:  90, y:   0 },
+      3: { x:   0, y: -90 },
+      4: { x:   0, y:  90 },
+      5: { x: -90, y:   0 },
+      6: { x:   0, y: 180 }
     };
 
     let isRolling = false;
@@ -241,10 +234,13 @@
           cubeEl.removeEventListener('transitionend', onFinalEnd);
           isRolling = false;
           cubeEl.classList.remove('rolling');
+          // Notifie la face sortie
           cubeEl.dispatchEvent(new CustomEvent('roll-end', { detail: { face, angles: { x: nx, y: ny, z: nz } } }));
 
           // Reste affiché 5s puis fade out
-          hideTimeout = setTimeout(() => { fadeOut(); }, 5000);
+          hideTimeout = setTimeout(() => {
+            fadeOut();
+          }, 5000);
         };
         cubeEl.addEventListener('transitionend', onFinalEnd);
       };
@@ -266,7 +262,7 @@
       hideTimeout = setTimeout(() => fadeOut(), 5000);
     };
 
-    // Auto-run à chaque refresh
+    // Au chargement: orientation propre, fade-in + roll automatique (à chaque refresh)
     function init() {
       setTransform(0, 0, 0, 1);
       requestAnimationFrame(() => { rollDie(); });
